@@ -4,14 +4,14 @@ Système de déploiement pour GH.
 
 Ce projet fournit un outil Python de déploiement qui génère automatiquement un site vidéo statique à partir du contenu du dossier `videos/`. Il scanne les fichiers présents, construit une playlist, crée les fichiers web nécessaires et produit un lecteur léger qui affiche les titres des vidéos sans exposer les noms de fichiers. L’objectif est de servir de base propre, réutilisable et simple à adapter pour lancer rapidement plusieurs sites vidéo sur GitHub.
 
-Le script peut aussi générer des fichiers de test `.jpg` et `.mp4` dans les dossiers de destination prévus afin de valider rapidement que l’arborescence et les exports fonctionnent correctement [web:1736][web:1754][web:1758].
+Le script peut aussi générer des fichiers de test `.jpg` et `.mp4` dans les dossiers de destination prévus afin de valider rapidement que l’arborescence et les exports fonctionnent correctement.
 
 ## Fonctionnement
 
 - Le dossier `videos/` contient les vidéos sources.
 - Le script crée les fichiers du site statique.
 - Le script peut créer des médias de test `.jpg` et `.mp4`.
-- Les dossiers de sortie sont créés automatiquement si besoin [web:1753][web:1749].
+- Les dossiers de sortie sont créés automatiquement si besoin.
 
 ## Lancement
 

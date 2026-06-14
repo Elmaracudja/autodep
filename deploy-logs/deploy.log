@@ -1,0 +1,8 @@
+[2026-06-14 17:59:19] Build terminé: 0 vidéo(s) détectée(s).
+[2026-06-14 18:02:39] Fichier test créé: test_video.mp4
+[2026-06-14 18:02:39] Fichier test créé: example_video.mp4
+[2026-06-14 18:02:39] Fichiers de test créés: 2 fichier(s)
+[2026-06-14 18:02:39] Build terminé: 2 vidéo(s) détectée(s).
+[2026-06-14 18:03:41] Build terminé: 2 vidéo(s) détectée(s).
+[2026-06-14 18:09:37] Build terminé: 2 vidéo(s) détectée(s).
+[2026-06-14 18:09:40] Erreur de publication: Command '['git', 'push', '-u', 'origin', 'main']' returned non-zero exit status 1.

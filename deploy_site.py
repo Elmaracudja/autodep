@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -310,8 +312,86 @@ def generate() -> None:
     )
 
 
+def publish() -> bool:
+    """Publish generated site to git repository (commit + push)."""
+    try:
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Stage generated files
+        files_to_commit = [
+            PLAYLIST_JSON,
+            INDEX_HTML,
+            SCRIPT_JS,
+            STYLE_CSS,
+        ]
+        
+        for file in files_to_commit:
+            try:
+                subprocess.run(["git", "add", str(file)], cwd=ROOT, check=True, capture_output=True, timeout=5)
+            except Exception:
+                pass  # File might not exist yet
+        
+        # Check for changes to commit
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if not status.stdout.strip():
+            print("✓ Site à jour, aucune modification à publier")
+            return True
+        
+        # Commit changes
+        commit_msg = f"build: automatic site generation {timestamp}"
+        subprocess.run(
+            ["git", "commit", "-m", commit_msg],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            timeout=5
+        )
+        
+        # Push to remote
+        subprocess.run(
+            ["git", "push"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            timeout=10
+        )
+        
+        print(f"✓ Publication réussie: {commit_msg}")
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        print(f"✗ Erreur git: {e}")
+        return False
+    except subprocess.TimeoutExpired:
+        print("✗ Opération git timeout")
+        return False
+    except Exception as e:
+        print(f"✗ Erreur: {e}")
+        return False
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Déploie un site vidéo statique depuis videos/."
+    )
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Publie le site sur le dépôt git (commit + push)"
+    )
+    args = parser.parse_args()
+    
     generate()
+    
+    if args.publish:
+        publish()
 
 
 if __name__ == "__main__":
