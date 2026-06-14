@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import subprocess
-from pathlib import Path
+import time
 from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VIDEOS_DIR = ROOT / "videos"
@@ -50,6 +49,14 @@ Si `python` ne pointe pas vers Python 3 dans ton environnement, utilise :
 
 ```bash
 python3 deploy_site.py
+```
+
+## Mode automatique
+
+Pour activer la surveillance du dossier `videos/` et régénérer la playlist dès qu’un fichier change :
+
+```bash
+python deploy_site.py --watch
 ```
 
 ## Dossiers
@@ -133,8 +140,15 @@ def generate_test_mp4() -> Path:
             frame[:] = (40, 80, 140)
             cv2.rectangle(frame, (60, 60), (1220, 660), (255, 255, 255), 6)
             cv2.putText(frame, "autodep test MP4", (100, 140), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
-            cv2.putText(frame, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), (100, 220),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, (240, 240, 240), 3)
+            cv2.putText(
+                frame,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                (100, 220),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.2,
+                (240, 240, 240),
+                3,
+            )
             cv2.putText(frame, f"frame {i+1}", (100, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (240, 240, 240), 3)
             writer.write(frame)
 
@@ -312,86 +326,52 @@ def generate() -> None:
     )
 
 
-def publish() -> bool:
-    """Publish generated site to git repository (commit + push)."""
+def watch_loop(interval: float = 1.0) -> None:
     try:
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Stage generated files
-        files_to_commit = [
-            PLAYLIST_JSON,
-            INDEX_HTML,
-            SCRIPT_JS,
-            STYLE_CSS,
-        ]
-        
-        for file in files_to_commit:
-            try:
-                subprocess.run(["git", "add", str(file)], cwd=ROOT, check=True, capture_output=True, timeout=5)
-            except Exception:
-                pass  # File might not exist yet
-        
-        # Check for changes to commit
-        status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
-        if not status.stdout.strip():
-            print("✓ Site à jour, aucune modification à publier")
-            return True
-        
-        # Commit changes
-        commit_msg = f"build: automatic site generation {timestamp}"
-        subprocess.run(
-            ["git", "commit", "-m", commit_msg],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            timeout=5
-        )
-        
-        # Push to remote
-        subprocess.run(
-            ["git", "push"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            timeout=10
-        )
-        
-        print(f"✓ Publication réussie: {commit_msg}")
-        return True
-        
-    except subprocess.CalledProcessError as e:
-        print(f"✗ Erreur git: {e}")
-        return False
-    except subprocess.TimeoutExpired:
-        print("✗ Opération git timeout")
-        return False
-    except Exception as e:
-        print(f"✗ Erreur: {e}")
-        return False
+        from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
+    except Exception:
+        print("watchdog n'est pas installé. Lance: python -m pip install watchdog")
+        return
+
+    class Handler(FileSystemEventHandler):
+        def __init__(self) -> None:
+            self._last = 0.0
+
+        def on_any_event(self, event) -> None:
+            if event.is_directory:
+                return
+            now = time.time()
+            if now - self._last < 0.5:
+                return
+            self._last = now
+            generate()
+            print(f"[watch] régénération après changement: {event.src_path}")
+
+    generate()
+    handler = Handler()
+    observer = Observer()
+    observer.schedule(handler, str(VIDEOS_DIR), recursive=True)
+    observer.start()
+    print(f"[watch] surveillance active sur: {VIDEOS_DIR}")
+    try:
+        while True:
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("[watch] arrêt demandé")
+    finally:
+        observer.stop()
+        observer.join()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Déploie un site vidéo statique depuis videos/."
-    )
-    parser.add_argument(
-        "--publish",
-        action="store_true",
-        help="Publie le site sur le dépôt git (commit + push)"
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--watch", action="store_true", help="Surveille videos/ et régénère automatiquement.")
     args = parser.parse_args()
-    
-    generate()
-    
-    if args.publish:
-        publish()
+    if args.watch:
+        watch_loop()
+    else:
+        generate()
 
 
 if __name__ == "__main__":
