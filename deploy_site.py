@@ -1,270 +1,318 @@
-#!/usr/bin/env python3
-import argparse
+from __future__ import annotations
+
 import json
+import os
 import re
-from datetime import datetime
 from pathlib import Path
+from datetime import datetime
 
 ROOT = Path(__file__).resolve().parent
-VIDEOS = ROOT / "videos"
-OUT = ROOT
-LOG_DIR = ROOT / "deploy-logs"
+VIDEOS_DIR = ROOT / "videos"
+LOGS_DIR = ROOT / "deploy-logs"
+TESTS_DIR = ROOT / "tests"
+ASSETS_DIR = ROOT / "assets"
+TEST_IMAGES_DIR = TESTS_DIR / "images"
+TEST_VIDEOS_DIR = TESTS_DIR / "videos"
 
-PLAYLIST_JSON = OUT / "playlist.json"
-INDEX_HTML = OUT / "index.html"
-SCRIPT_JS = OUT / "script.js"
-STYLE_CSS = OUT / "style.css"
-README_MD = OUT / "README.md"
-DEPLOY_LOG = LOG_DIR / "deploy.log"
+SITE_TITLE = "autodep"
+SITE_DESCRIPTION = (
+    "Système de déploiement pour GH. Ce site statique est généré automatiquement "
+    "à partir du dossier videos/."
+)
 
-VIDEO_EXTS = {".mp4", ".m4v", ".webm", ".mov", ".ogg"}
-DEFAULT_AUTHOR = "EKWallegory Prod"
-DEFAULT_CHANNEL = "EM101 Webradio"
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-HTML = """<!doctype html>
+README = """# autodep
+
+Système de déploiement pour GH.
+
+Ce projet fournit un outil Python de déploiement qui génère automatiquement un site vidéo statique à partir du contenu du dossier `videos/`. Il scanne les fichiers présents, construit une playlist, crée les fichiers web nécessaires et produit un lecteur léger qui affiche les titres des vidéos sans exposer les noms de fichiers. L’objectif est de servir de base propre, réutilisable et simple à adapter pour lancer rapidement plusieurs sites vidéo sur GitHub.
+
+Le script peut aussi générer des fichiers de test `.jpg` et `.mp4` dans les dossiers de destination prévus afin de valider rapidement que l’arborescence et les exports fonctionnent correctement.
+
+## Fonctionnement
+
+- Le dossier `videos/` contient les vidéos sources.
+- Le script crée les fichiers du site statique.
+- Le script peut créer des médias de test `.jpg` et `.mp4`.
+- Les dossiers de sortie sont créés automatiquement si besoin.
+
+## Lancement
+
+```bash
+python deploy_site.py
+```
+
+Si `python` ne pointe pas vers Python 3 dans ton environnement, utilise :
+
+```bash
+python3 deploy_site.py
+```
+
+## Dossiers
+
+- `videos/` : vidéos source.
+- `deploy-logs/` : journal de déploiement.
+- `tests/` : fichiers de test générés.
+- `assets/` : ressources statiques si besoin.
+"""
+
+PLAYLIST_JSON = ROOT / "playlist.json"
+INDEX_HTML = ROOT / "index.html"
+SCRIPT_JS = ROOT / "script.js"
+STYLE_CSS = ROOT / "style.css"
+README_MD = ROOT / "README.md"
+
+
+def slugify(name: str) -> str:
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", name.lower()).strip("-")
+    return s or "video"
+
+
+def ensure_dirs() -> None:
+    for path in [LOGS_DIR, TESTS_DIR, ASSETS_DIR, TEST_IMAGES_DIR, TEST_VIDEOS_DIR, VIDEOS_DIR]:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def collect_videos() -> list[dict]:
+    items = []
+    for path in sorted(VIDEOS_DIR.iterdir()):
+        if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
+            title = path.stem.replace("_", " ").replace("-", " ").strip()
+            items.append(
+                {
+                    "title": title or path.stem,
+                    "filename": path.name,
+                    "path": str(path.relative_to(ROOT)).replace("\\", "/"),
+                }
+            )
+    return items
+
+
+def write_text(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+
+
+def write_json(path: Path, data) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def generate_test_jpg() -> Path:
+    target = TEST_IMAGES_DIR / "test-image.jpg"
+    try:
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGB", (1280, 720), (32, 96, 160))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((60, 60, 1220, 660), outline=(255, 255, 255), width=8)
+        draw.text((100, 120), "autodep test JPG", fill=(255, 255, 255))
+        draw.text((100, 180), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), fill=(240, 240, 240))
+        img.save(target, format="JPEG", quality=92)
+    except Exception:
+        target.write_bytes(b"")
+    return target
+
+
+def generate_test_mp4() -> Path:
+    target = TEST_VIDEOS_DIR / "test-video.mp4"
+    try:
+        import cv2
+        import numpy as np
+
+        width, height = 1280, 720
+        fps = 24
+        seconds = 2
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(target), fourcc, fps, (width, height))
+
+        for i in range(fps * seconds):
+            frame = np.zeros((height, width, 3), dtype=np.uint8)
+            frame[:] = (40, 80, 140)
+            cv2.rectangle(frame, (60, 60), (1220, 660), (255, 255, 255), 6)
+            cv2.putText(frame, "autodep test MP4", (100, 140), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4)
+            cv2.putText(frame, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), (100, 220),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, (240, 240, 240), 3)
+            cv2.putText(frame, f"frame {i+1}", (100, 300), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (240, 240, 240), 3)
+            writer.write(frame)
+
+        writer.release()
+    except Exception:
+        target.write_bytes(b"")
+    return target
+
+
+def build_playlist(videos: list[dict]) -> list[dict]:
+    playlist = []
+    for idx, item in enumerate(videos, start=1):
+        playlist.append(
+            {
+                "id": idx,
+                "title": item["title"],
+                "src": item["path"],
+            }
+        )
+    return playlist
+
+
+def render_html(playlist: list[dict]) -> str:
+    items = "\n".join(
+        f'<li><button data-src="{v["src"]}">{v["title"]}</button></li>' for v in playlist
+    ) or "<li>Aucune vidéo trouvée dans le dossier videos/.</li>"
+
+    return f"""<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Autolist</title>
-  <link rel="stylesheet" href="./style.css">
+  <title>{SITE_TITLE}</title>
+  <meta name="description" content="{SITE_DESCRIPTION}">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app">
-    <header class="hero">
-      <p class="eyebrow">Lecture vidéo automatique</p>
-      <h1 id="videoTitle">Chargement…</h1>
-      <p id="videoDescription" class="description"></p>
-      <p id="videoMeta" class="meta"></p>
+    <header>
+      <h1>{SITE_TITLE}</h1>
+      <p>{SITE_DESCRIPTION}</p>
     </header>
 
-    <section class="player-shell">
-      <video
-        id="player"
-        controls
-        autoplay
-        muted
-        playsinline
-        preload="metadata"
-        controlslist="nodownload noremoteplayback"
-        disablepictureinpicture
-        oncontextmenu="return false;"
-      ></video>
-    </section>
-
-    <section class="playlist-shell">
-      <div class="playlist-head">
-        <h2>Playlist</h2>
-        <p id="playlistCount">0 vidéo</p>
+    <section class="layout">
+      <div class="player">
+        <video id="player" controls playsinline></video>
       </div>
-      <ul id="playlistList" class="playlist-list"></ul>
+
+      <aside class="playlist">
+        <h2>Vidéos</h2>
+        <ul id="playlist">
+          {items}
+        </ul>
+      </aside>
     </section>
   </main>
-  <script src="./script.js" defer></script>
+  <script src="script.js"></script>
 </body>
 </html>
 """
 
-CSS = """:root{
-  color-scheme: dark;
-  --bg:#0c1118;
-  --panel:#121a23;
-  --panel2:#182231;
-  --text:#eef4fb;
-  --muted:#98a6b7;
-  --line:rgba(255,255,255,.12);
-  --accent:#39c7ff;
-  --radius:18px;
+
+def render_css() -> str:
+    return """
+:root {
+  --bg: #0b1020;
+  --panel: #11182d;
+  --text: #e8eefc;
+  --muted: #aab6d6;
+  --accent: #5d8cff;
 }
-*{box-sizing:border-box}
-html,body{margin:0;padding:0}
-body{
-  min-height:100vh;
-  font-family:Inter,Arial,sans-serif;
-  background:radial-gradient(circle at top, rgba(57,199,255,.12), transparent 30%), linear-gradient(180deg,#0c1118 0%,#101923 100%);
-  color:var(--text);
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: linear-gradient(180deg, #08101f, var(--bg));
+  color: var(--text);
 }
-.app{
-  width:min(1100px, calc(100% - 32px));
-  margin:0 auto;
-  padding:24px 0 48px;
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
 }
-.hero,.player-shell,.playlist-shell{
-  background:rgba(18,26,35,.92);
-  border:1px solid var(--line);
-  border-radius:var(--radius);
-  box-shadow:0 18px 60px rgba(0,0,0,.32);
+
+.layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
 }
-.hero{padding:24px;margin-bottom:20px}
-.eyebrow{
-  margin:0 0 8px;
-  text-transform:uppercase;
-  letter-spacing:.08em;
-  color:var(--accent);
-  font-size:.8rem;
+
+.player, .playlist {
+  background: rgba(17, 24, 45, 0.95);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  padding: 16px;
 }
-h1{margin:0 0 10px;font-size:clamp(1.8rem,3vw,2.8rem)}
-.description,.meta{margin:0;color:var(--muted)}
-.player-shell{overflow:hidden;margin-bottom:20px;background:#000}
-video{display:block;width:100%;aspect-ratio:16/9;background:#000}
-.playlist-shell{padding:20px 24px 24px}
-.playlist-head{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}
-.playlist-head h2,.playlist-head p{margin:0}
-.playlist-list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
-.playlist-item{
-  width:100%;
-  border:1px solid var(--line);
-  background:var(--panel2);
-  color:var(--text);
-  border-radius:14px;
-  padding:14px 16px;
-  text-align:left;
-  cursor:pointer;
+
+video {
+  width: 100%;
+  border-radius: 12px;
+  background: #000;
 }
-.playlist-item:hover,.playlist-item:focus-visible{border-color:rgba(57,199,255,.55);outline:none}
-.playlist-item.active{background:rgba(57,199,255,.14);border-color:rgba(57,199,255,.65)}
-.playlist-item-title{margin:0 0 4px;font-size:1rem}
-.playlist-item-meta{margin:0;color:var(--muted);font-size:.92rem}
-.empty-state{color:var(--muted);padding:18px;border:1px dashed var(--line);border-radius:14px}
-@media (max-width:780px){.playlist-head{flex-direction:column;align-items:flex-start}}
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+li + li {
+  margin-top: 8px;
+}
+
+button {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #17213d;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent);
+}
 """
 
-JS = """const player = document.getElementById('player');
-const titleEl = document.getElementById('videoTitle');
-const descEl = document.getElementById('videoDescription');
-const metaEl = document.getElementById('videoMeta');
-const playlistList = document.getElementById('playlistList');
-const playlistCount = document.getElementById('playlistCount');
 
-let playlist = [];
-let currentIndex = 0;
+def render_js(playlist: list[dict]) -> str:
+    return f"""
+const playlist = {json.dumps(playlist, ensure_ascii=False, indent=2)};
+const player = document.getElementById('player');
+const buttons = document.querySelectorAll('#playlist button');
 
-function renderPlaylist() {
-  playlistList.innerHTML = '';
-  playlistCount.textContent = `${playlist.length} vidéo${playlist.length > 1 ? 's' : ''}`;
+function play(src) {{
+  player.src = src;
+  player.play().catch(() => {{}});
+}}
 
-  if (!playlist.length) {
-    playlistList.innerHTML = '<li class="empty-state">Aucune vidéo détectée dans videos/.</li>';
-    return;
-  }
+buttons.forEach((button) => {{
+  button.addEventListener('click', () => play(button.dataset.src));
+}});
 
-  playlist.forEach((item, index) => {
-    const li = document.createElement('li');
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'playlist-item';
-    if (index === currentIndex) btn.classList.add('active');
-    btn.innerHTML = `<p class="playlist-item-title">${item.title}</p><p class="playlist-item-meta">${item.channel || ''}</p>`;
-    btn.addEventListener('click', () => loadVideo(index, true));
-    li.appendChild(btn);
-    playlistList.appendChild(li);
-  });
-}
-
-function updateMeta(item) {
-  titleEl.textContent = item.title || 'Sans titre';
-  descEl.textContent = item.description || '';
-  metaEl.textContent = [item.author, item.channel].filter(Boolean).join(' · ');
-}
-
-function loadVideo(index, autoplay = true) {
-  currentIndex = index;
-  const item = playlist[index];
-  player.src = item.src;
-  player.load();
-  updateMeta(item);
-  renderPlaylist();
-  if (autoplay) player.play().catch(() => {});
-}
-
-function nextVideo() {
-  if (!playlist.length) return;
-  loadVideo((currentIndex + 1) % playlist.length, true);
-}
-
-async function init() {
-  document.addEventListener('contextmenu', e => e.preventDefault());
-
-  try {
-    const response = await fetch('./playlist.json', { cache: 'no-store' });
-    const data = await response.json();
-    playlist = Array.isArray(data.playlist) ? data.playlist : [];
-    renderPlaylist();
-
-    if (playlist.length) {
-      loadVideo(0, true);
-    } else {
-      updateMeta({
-        title: 'Aucune vidéo disponible',
-        description: 'Dépose des fichiers dans videos/ puis relance le déploiement.',
-        author: '',
-        channel: ''
-      });
-    }
-  } catch (error) {
-    titleEl.textContent = 'Erreur de chargement';
-    descEl.textContent = 'Impossible de lire playlist.json.';
-    metaEl.textContent = '';
-    playlistList.innerHTML = '<li class="empty-state">Erreur de chargement de la playlist.</li>';
-    console.error(error);
-  }
-}
-
-player.addEventListener('ended', nextVideo);
-init();
+if (playlist.length > 0) {{
+  play(playlist[0].src);
+}}
 """
 
-def log(msg):
-    LOG_DIR.mkdir(exist_ok=True)
-    line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
-    with DEPLOY_LOG.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
 
-def slug_to_title(name):
-    stem = Path(name).stem
-    stem = re.sub(r"[_-]+", " ", stem)
-    stem = re.sub(r"(?<=[a-z])(?=[A-Z0-9])", " ", stem)
-    stem = re.sub(r"\s+", " ", stem).strip()
-    return stem.title() if stem else "Sans titre"
+def generate() -> None:
+    ensure_dirs()
+    videos = collect_videos()
+    playlist = build_playlist(videos)
 
-def scan_videos():
-    VIDEOS.mkdir(exist_ok=True)
-    return sorted([p for p in VIDEOS.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTS], key=lambda p: p.name.lower())
-
-def build_playlist():
-    items = []
-    for i, p in enumerate(scan_videos(), start=1):
-        title = slug_to_title(p.name)
-        items.append({
-            "id": i,
-            "title": title,
-            "src": f"./videos/{p.name}",
-            "author": DEFAULT_AUTHOR,
-            "channel": DEFAULT_CHANNEL,
-            "description": f"Vidéo {i}: {title}."
-        })
-    return items
-
-def write_text(path, content):
-    path.write_text(content, encoding="utf-8")
-
-def generate():
-    playlist = build_playlist()
-    payload = {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "playlist": playlist
-    }
-    write_text(PLAYLIST_JSON, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
-    write_text(INDEX_HTML, HTML)
-    write_text(SCRIPT_JS, JS)
-    write_text(STYLE_CSS, CSS)
+    write_json(PLAYLIST_JSON, playlist)
+    write_text(INDEX_HTML, render_html(playlist))
+    write_text(SCRIPT_JS, render_js(playlist))
+    write_text(STYLE_CSS, render_css())
     write_text(README_MD, README)
-    log(f"Build terminé: {len(playlist)} vidéo(s) détectée(s).")
 
-def main():
-    parser = argparse.ArgumentParser(description="Déploie un site vidéo statique depuis videos/.")
-    parser.parse_args()
+    generate_test_jpg()
+    generate_test_mp4()
+
+    log = LOGS_DIR / f"deploy-{datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
+    log.write_text(
+        f"Generated at {datetime.now().isoformat()}\n"
+        f"Videos: {len(videos)}\n"
+        f"Playlist: {len(playlist)}\n",
+        encoding="utf-8",
+    )
+
+
+def main() -> None:
     generate()
+
 
 if __name__ == "__main__":
     main()
