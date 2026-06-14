@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import re
-import sys
 import time
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VIDEOS = ROOT / "videos"
 ASSETS = ROOT / "assets"
 OUT = ROOT
-LOGS = ROOT / "deploy-logs"
+LOG_DIR = ROOT / "deploy-logs"
+
 PLAYLIST_JSON = OUT / "playlist.json"
 INDEX_HTML = OUT / "index.html"
 SCRIPT_JS = OUT / "script.js"
 STYLE_CSS = OUT / "style.css"
 README_MD = OUT / "README.md"
-DEPLOY_LOG = LOGS / "deploy.log"
+DEPLOY_LOG = LOG_DIR / "deploy.log"
 
 VIDEO_EXTS = {".mp4", ".m4v", ".webm", ".mov", ".ogg"}
+
 DEFAULT_AUTHOR = "EKWallegory Prod"
 DEFAULT_CHANNEL = "EM101 Webradio"
 
@@ -219,7 +219,11 @@ init();
 
 README = """# Autolist
 
-Ce dépôt est généré automatiquement à partir du dossier `videos/`.
+Ce projet génère automatiquement un site vidéo statique à partir du contenu du dossier `videos/`.
+
+## Principe
+
+Le script scanne les fichiers vidéo présents, construit une playlist, génère les fichiers web nécessaires et affiche uniquement des titres lisibles dans l’interface, sans exposer les noms de fichiers.
 
 ## Usage
 
@@ -227,15 +231,15 @@ Ce dépôt est généré automatiquement à partir du dossier `videos/`.
 python deploy_site.py
 ```
 
-## Contenu attendu
+## Dossiers
 
 - `videos/` : vidéos source.
 - `assets/` : ressources optionnelles.
-- `playlist.json`, `index.html`, `script.js`, `style.css` : fichiers générés.
+- `deploy-logs/` : journal de déploiement.
 """
 
 def log(msg):
-    LOGS.mkdir(exist_ok=True)
+    LOG_DIR.mkdir(exist_ok=True)
     line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
     print(line)
     with DEPLOY_LOG.open("a", encoding="utf-8") as f:
@@ -249,8 +253,7 @@ def slug_to_title(name):
     return stem.title() if stem else "Sans titre"
 
 def scan_videos():
-    if not VIDEOS.exists():
-        VIDEOS.mkdir(parents=True, exist_ok=True)
+    VIDEOS.mkdir(exist_ok=True)
     return sorted([p for p in VIDEOS.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTS], key=lambda p: p.name.lower())
 
 def build_playlist():
@@ -267,7 +270,7 @@ def build_playlist():
         })
     return items
 
-def write_file(path, content):
+def write_text(path, content):
     path.write_text(content, encoding="utf-8")
 
 def generate():
@@ -276,81 +279,22 @@ def generate():
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "playlist": playlist
     }
-    write_file(PLAYLIST_JSON, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
-    write_file(INDEX_HTML, HTML)
-    write_file(SCRIPT_JS, JS)
-    write_file(STYLE_CSS, CSS)
-    write_file(README_MD, README)
+    write_text(PLAYLIST_JSON, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    write_text(INDEX_HTML, HTML)
+    write_text(SCRIPT_JS, JS)
+    write_text(STYLE_CSS, CSS)
+    write_text(README_MD, README)
     log(f"Build terminé: {len(playlist)} vidéo(s) détectée(s).")
     for item in playlist:
         log(f"OK: {item['src']} -> {item['title']}")
     if not playlist:
         log("INFO: aucun média détecté dans videos/.")
 
-def snapshot():
-    return tuple((p.name, p.stat().st_size, int(p.stat().st_mtime)) for p in scan_videos())
-
-def polling_watch():
-    log("Mode watch (polling) activé.")
-    last = snapshot()
-    generate()
-    try:
-        while True:
-            time.sleep(1)
-            now = snapshot()
-            if now != last:
-                log("Changement détecté, régénération...")
-                generate()
-                last = now
-    except KeyboardInterrupt:
-        log("Watch arrêté.")
-
-def watchdog_watch():
-    try:
-        from watchdog.events import FileSystemEventHandler
-        from watchdog.observers import Observer
-    except Exception:
-        return False
-
-    class Handler(FileSystemEventHandler):
-        def __init__(self):
-            self.last = 0.0
-        def on_any_event(self, event):
-            if event.is_directory:
-                return
-            if Path(event.src_path).suffix.lower() not in VIDEO_EXTS:
-                return
-            now = time.time()
-            if now - self.last < 1:
-                return
-            self.last = now
-            log("Watchdog: changement détecté, régénération...")
-            generate()
-
-    log("Mode watch (watchdog) activé.")
-    generate()
-    obs = Observer()
-    obs.schedule(Handler(), str(VIDEOS), recursive=False)
-    obs.start()
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        obs.stop()
-    obs.join()
-    return True
-
 def main():
     parser = argparse.ArgumentParser(description="Déploie un site vidéo statique depuis videos/.")
-    parser.add_argument("--watch", action="store_true", help="surveille videos/ et régénère automatiquement")
-    args = parser.parse_args()
-
+    parser.parse_args()
     log("Déploiement lancé.")
-    if args.watch:
-        if not watchdog_watch():
-            polling_watch()
-    else:
-        generate()
+    generate()
     log("Déploiement terminé.")
 
 if __name__ == "__main__":
