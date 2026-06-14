@@ -2,13 +2,11 @@
 import argparse
 import json
 import re
-import time
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VIDEOS = ROOT / "videos"
-ASSETS = ROOT / "assets"
 OUT = ROOT
 LOG_DIR = ROOT / "deploy-logs"
 
@@ -20,7 +18,6 @@ README_MD = OUT / "README.md"
 DEPLOY_LOG = LOG_DIR / "deploy.log"
 
 VIDEO_EXTS = {".mp4", ".m4v", ".webm", ".mov", ".ogg"}
-
 DEFAULT_AUTHOR = "EKWallegory Prod"
 DEFAULT_CHANNEL = "EM101 Webradio"
 
@@ -217,31 +214,9 @@ player.addEventListener('ended', nextVideo);
 init();
 """
 
-README = """# Autolist
-
-Ce projet génère automatiquement un site vidéo statique à partir du contenu du dossier `videos/`.
-
-## Principe
-
-Le script scanne les fichiers vidéo présents, construit une playlist, génère les fichiers web nécessaires et affiche uniquement des titres lisibles dans l’interface, sans exposer les noms de fichiers.
-
-## Usage
-
-```bash
-python deploy_site.py
-```
-
-## Dossiers
-
-- `videos/` : vidéos source.
-- `assets/` : ressources optionnelles.
-- `deploy-logs/` : journal de déploiement.
-"""
-
 def log(msg):
     LOG_DIR.mkdir(exist_ok=True)
     line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
-    print(line)
     with DEPLOY_LOG.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
 
@@ -285,17 +260,11 @@ def generate():
     write_text(STYLE_CSS, CSS)
     write_text(README_MD, README)
     log(f"Build terminé: {len(playlist)} vidéo(s) détectée(s).")
-    for item in playlist:
-        log(f"OK: {item['src']} -> {item['title']}")
-    if not playlist:
-        log("INFO: aucun média détecté dans videos/.")
 
 def main():
     parser = argparse.ArgumentParser(description="Déploie un site vidéo statique depuis videos/.")
     parser.parse_args()
-    log("Déploiement lancé.")
     generate()
-    log("Déploiement terminé.")
 
 if __name__ == "__main__":
     main()
