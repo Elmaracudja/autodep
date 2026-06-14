@@ -1,0 +1,7 @@
+deploy-logs/
+tests/
+videos/*.mp4
+videos/*.jpg
+videos/*.jpeg
+videos/*.png
+videos/*.webp
