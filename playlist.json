@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "title": "example video",
+    "src": "videos/example_video.mp4"
+  },
+  {
+    "id": 2,
+    "title": "test video",
+    "src": "videos/test_video.mp4"
+  }
+]

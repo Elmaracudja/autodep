@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>autodep</title>
+  <meta name="description" content="Système de déploiement pour GH. Ce site statique est généré automatiquement à partir du dossier videos/.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>autodep</h1>
+      <p>Système de déploiement pour GH. Ce site statique est généré automatiquement à partir du dossier videos/.</p>
+    </header>
+
+    <section class="layout">
+      <div class="player">
+        <video id="player" controls playsinline></video>
+      </div>
+
+      <aside class="playlist">
+        <h2>Vidéos</h2>
+        <ul id="playlist">
+          <li><button data-src="videos/example_video.mp4">example video</button></li>
+<li><button data-src="videos/test_video.mp4">test video</button></li>
+        </ul>
+      </aside>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
